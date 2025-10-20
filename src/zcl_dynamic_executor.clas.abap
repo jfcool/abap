@@ -369,10 +369,10 @@ CLASS zcl_dynamic_executor IMPLEMENTATION.
       ENDLOOP.
     ENDIF.
 
-    " Exception Table aufbauen - alle Exceptions abfangen
+    " Exception Table aufbauen - HASHED TABLE braucht INSERT INTO TABLE
     ls_etab-name = 'OTHERS'.
     ls_etab-value = 1.
-    APPEND ls_etab TO lt_etab.
+    INSERT ls_etab INTO TABLE lt_etab.
 
     " Dynamischer Aufruf
     CALL FUNCTION iv_fm_name
