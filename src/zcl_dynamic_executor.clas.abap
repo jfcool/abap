@@ -63,7 +63,7 @@ CLASS zcl_dynamic_executor IMPLEMENTATION.
           lr_data           TYPE REF TO data,
           lv_fm_name        TYPE rs38l_fnam.
 
-    \" 1. FM Name aus JSON extrahieren
+    " 1. FM Name aus JSON extrahieren
     CALL TRANSFORMATION id
       SOURCE XML iv_json
       RESULT fm_name = lv_fm_name.
@@ -72,18 +72,18 @@ CLASS zcl_dynamic_executor IMPLEMENTATION.
       RAISE EXCEPTION TYPE cx_sy_dyn_call_error.
     ENDIF.
 
-    \" 2. Dynamische Struktur basierend auf FM Signatur aufbauen
+    " 2. Dynamische Struktur basierend auf FM Signatur aufbauen
     ls_call_structure = build_dynamic_fm_structure( lv_fm_name ).
 
-    \" 3. JSON in die dynamische Struktur deserialisieren
+    " 3. JSON in die dynamische Struktur deserialisieren
     TRY.
         CALL TRANSFORMATION id
           SOURCE XML iv_json
           RESULT importing = ls_call_structure-importing
                  changing  = ls_call_structure-changing
                  tables    = ls_call_structure-tables.
-      CATCH cx_transformation_error INTO DATA(lx_trans).
-        \" Bei Fehler: Struktur komplett neu aufbauen
+      CATCH cx_transformation_error.
+        " Bei Fehler: Struktur komplett neu aufbauen
         CREATE DATA lr_data TYPE ty_fm_call_structure.
         ASSIGN lr_data->* TO FIELD-SYMBOL(<fs_complete>).
         <fs_complete> = ls_call_structure.
@@ -95,7 +95,7 @@ CLASS zcl_dynamic_executor IMPLEMENTATION.
         ls_call_structure = <fs_complete>.
     ENDTRY.
 
-    \" 4. Funktionsbaustein dynamisch aufrufen
+    " 4. Funktionsbaustein dynamisch aufrufen
     execute_function_module(
       EXPORTING
         iv_fm_name   = lv_fm_name
@@ -105,7 +105,7 @@ CLASS zcl_dynamic_executor IMPLEMENTATION.
       IMPORTING
         er_exporting = ls_call_structure-exporting ).
 
-    \" 5. Ergebnis-Struktur zurueck nach JSON serialisieren
+    " 5. Ergebnis-Struktur zurueck nach JSON serialisieren
     CALL TRANSFORMATION id
       SOURCE fm_name   = lv_fm_name
              importing = ls_call_structure-importing
@@ -122,6 +122,10 @@ CLASS zcl_dynamic_executor IMPLEMENTATION.
           lt_export    TYPE STANDARD TABLE OF rsimp,
           lt_change    TYPE STANDARD TABLE OF rsimp,
           lt_tables    TYPE STANDARD TABLE OF rsimp,
+          ls_import    TYPE rsimp,
+          ls_export    TYPE rsimp,
+          ls_change    TYPE rsimp,
+          ls_table     TYPE rsimp,
           lt_comp_imp  TYPE cl_abap_structdescr=>component_table,
           lt_comp_exp  TYPE cl_abap_structdescr=>component_table,
           lt_comp_chg  TYPE cl_abap_structdescr=>component_table,
@@ -134,7 +138,7 @@ CLASS zcl_dynamic_executor IMPLEMENTATION.
 
     rs_structure-fm_name = iv_fm_name.
 
-    \" FM Interface abrufen
+    " FM Interface abrufen
     get_fm_interface(
       EXPORTING
         iv_funcname = iv_fm_name
@@ -144,8 +148,8 @@ CLASS zcl_dynamic_executor IMPLEMENTATION.
         et_change   = lt_change
         et_tables   = lt_tables ).
 
-    \" === IMPORTING Parameter Struktur aufbauen ===
-    LOOP AT lt_import INTO DATA(ls_import).
+    " === IMPORTING Parameter Struktur aufbauen ===
+    LOOP AT lt_import INTO ls_import.
       CLEAR ls_component.
       ls_component-name = to_upper( ls_import-parameter ).
 
@@ -177,8 +181,8 @@ CLASS zcl_dynamic_executor IMPLEMENTATION.
       CREATE DATA rs_structure-importing TYPE HANDLE lo_struct.
     ENDIF.
 
-    \" === EXPORTING Parameter Struktur aufbauen ===
-    LOOP AT lt_export INTO DATA(ls_export).
+    " === EXPORTING Parameter Struktur aufbauen ===
+    LOOP AT lt_export INTO ls_export.
       CLEAR ls_component.
       ls_component-name = to_upper( ls_export-parameter ).
 
@@ -210,8 +214,8 @@ CLASS zcl_dynamic_executor IMPLEMENTATION.
       CREATE DATA rs_structure-exporting TYPE HANDLE lo_struct.
     ENDIF.
 
-    \" === CHANGING Parameter Struktur aufbauen ===
-    LOOP AT lt_change INTO DATA(ls_change).
+    " === CHANGING Parameter Struktur aufbauen ===
+    LOOP AT lt_change INTO ls_change.
       CLEAR ls_component.
       ls_component-name = to_upper( ls_change-parameter ).
 
@@ -243,8 +247,8 @@ CLASS zcl_dynamic_executor IMPLEMENTATION.
       CREATE DATA rs_structure-changing TYPE HANDLE lo_struct.
     ENDIF.
 
-    \" === TABLES Parameter Struktur aufbauen ===
-    LOOP AT lt_tables INTO DATA(ls_table).
+    " === TABLES Parameter Struktur aufbauen ===
+    LOOP AT lt_tables INTO ls_table.
       CLEAR ls_component.
       ls_component-name = to_upper( ls_table-parameter ).
 
@@ -252,7 +256,7 @@ CLASS zcl_dynamic_executor IMPLEMENTATION.
         TRY.
             lo_type = cl_abap_typedescr=>describe_by_name( ls_table-reference ).
             lo_datadescr ?= lo_type.
-            \" Fuer Tables: Immer als Tabelle definieren
+            " Fuer Tables: Immer als Tabelle definieren
             lo_table = cl_abap_tabledescr=>create( p_line_type = lo_datadescr ).
             ls_component-type = lo_table.
           CATCH cx_root.
@@ -282,11 +286,16 @@ CLASS zcl_dynamic_executor IMPLEMENTATION.
           lt_import  TYPE STANDARD TABLE OF rsimp,
           lt_export  TYPE STANDARD TABLE OF rsimp,
           lt_change  TYPE STANDARD TABLE OF rsimp,
-          lt_tables  TYPE STANDARD TABLE OF rsimp.
+          lt_tables  TYPE STANDARD TABLE OF rsimp,
+          ls_import  TYPE rsimp,
+          ls_export  TYPE rsimp,
+          ls_change  TYPE rsimp,
+          ls_table   TYPE rsimp,
+          ls_temp    TYPE ty_fm_call_structure.
 
     FIELD-SYMBOLS: <fs_any> TYPE any.
 
-    \" Interface abrufen
+    " Interface abrufen
     get_fm_interface(
       EXPORTING
         iv_funcname = iv_fm_name
@@ -296,16 +305,16 @@ CLASS zcl_dynamic_executor IMPLEMENTATION.
         et_change   = lt_change
         et_tables   = lt_tables ).
 
-    \" Exporting Struktur erstellen
+    " Exporting Struktur erstellen
     IF er_exporting IS NOT BOUND.
-      DATA(ls_temp) = build_dynamic_fm_structure( iv_fm_name ).
+      ls_temp = build_dynamic_fm_structure( iv_fm_name ).
       er_exporting = ls_temp-exporting.
     ENDIF.
 
-    \" === IMPORTING Parameter ===
+    " === IMPORTING Parameter ===
     IF ir_importing IS BOUND.
       ASSIGN ir_importing->* TO FIELD-SYMBOL(<fs_importing>).
-      LOOP AT lt_import INTO DATA(ls_import).
+      LOOP AT lt_import INTO ls_import.
         ASSIGN COMPONENT ls_import-parameter OF STRUCTURE <fs_importing> TO <fs_any>.
         IF sy-subrc = 0.
           ls_ptab-name  = ls_import-parameter.
@@ -316,10 +325,10 @@ CLASS zcl_dynamic_executor IMPLEMENTATION.
       ENDLOOP.
     ENDIF.
 
-    \" === EXPORTING Parameter ===
+    " === EXPORTING Parameter ===
     IF er_exporting IS BOUND.
       ASSIGN er_exporting->* TO FIELD-SYMBOL(<fs_exporting>).
-      LOOP AT lt_export INTO DATA(ls_export).
+      LOOP AT lt_export INTO ls_export.
         ASSIGN COMPONENT ls_export-parameter OF STRUCTURE <fs_exporting> TO <fs_any>.
         IF sy-subrc = 0.
           ls_ptab-name  = ls_export-parameter.
@@ -330,10 +339,10 @@ CLASS zcl_dynamic_executor IMPLEMENTATION.
       ENDLOOP.
     ENDIF.
 
-    \" === CHANGING Parameter ===
+    " === CHANGING Parameter ===
     IF ir_changing IS BOUND.
       ASSIGN ir_changing->* TO FIELD-SYMBOL(<fs_changing>).
-      LOOP AT lt_change INTO DATA(ls_change).
+      LOOP AT lt_change INTO ls_change.
         ASSIGN COMPONENT ls_change-parameter OF STRUCTURE <fs_changing> TO <fs_any>.
         IF sy-subrc = 0.
           ls_ptab-name  = ls_change-parameter.
@@ -344,10 +353,10 @@ CLASS zcl_dynamic_executor IMPLEMENTATION.
       ENDLOOP.
     ENDIF.
 
-    \" === TABLES Parameter ===
+    " === TABLES Parameter ===
     IF ir_tables IS BOUND.
       ASSIGN ir_tables->* TO FIELD-SYMBOL(<fs_tables>).
-      LOOP AT lt_tables INTO DATA(ls_table).
+      LOOP AT lt_tables INTO ls_table.
         ASSIGN COMPONENT ls_table-parameter OF STRUCTURE <fs_tables> TO <fs_any>.
         IF sy-subrc = 0.
           ls_ptab-name  = ls_table-parameter.
@@ -358,7 +367,7 @@ CLASS zcl_dynamic_executor IMPLEMENTATION.
       ENDLOOP.
     ENDIF.
 
-    \" Dynamischer Aufruf
+    " Dynamischer Aufruf
     CALL FUNCTION iv_fm_name
       PARAMETER-TABLE lt_ptab
       EXCEPTIONS
