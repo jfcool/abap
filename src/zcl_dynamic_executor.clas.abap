@@ -10,7 +10,7 @@ CLASS zcl_dynamic_executor DEFINITION
         RETURNING
           VALUE(rv_json)  TYPE string
         RAISING
-          cx_sy_dyn_call_error
+          cx_sy_dyn_call_illegal_form
           cx_transformation_error.
 
   PRIVATE SECTION.
@@ -30,7 +30,7 @@ CLASS zcl_dynamic_executor DEFINITION
         RETURNING
           VALUE(rs_structure)   TYPE ty_fm_call_structure
         RAISING
-          cx_sy_dyn_call_error,
+          cx_sy_dyn_call_illegal_form,
       execute_function_module
         IMPORTING
           iv_fm_name       TYPE rs38l_fnam
@@ -40,7 +40,7 @@ CLASS zcl_dynamic_executor DEFINITION
         EXPORTING
           er_exporting     TYPE REF TO data
         RAISING
-          cx_sy_dyn_call_error,
+          cx_sy_dyn_call_illegal_form,
       get_fm_interface
         IMPORTING
           iv_funcname        TYPE rs38l_fnam
@@ -50,7 +50,7 @@ CLASS zcl_dynamic_executor DEFINITION
           et_change          TYPE STANDARD TABLE
           et_tables          TYPE STANDARD TABLE
         RAISING
-          cx_sy_dyn_call_error.
+          cx_sy_dyn_call_illegal_form.
 
 ENDCLASS.
 
@@ -69,7 +69,7 @@ CLASS zcl_dynamic_executor IMPLEMENTATION.
       RESULT fm_name = lv_fm_name.
 
     IF lv_fm_name IS INITIAL.
-      RAISE EXCEPTION TYPE cx_sy_dyn_call_error.
+      RAISE EXCEPTION TYPE cx_sy_dyn_call_illegal_form.
     ENDIF.
 
     " 2. Dynamische Struktur basierend auf FM Signatur aufbauen
@@ -282,7 +282,9 @@ CLASS zcl_dynamic_executor IMPLEMENTATION.
 
   METHOD execute_function_module.
     DATA: lt_ptab    TYPE abap_func_parmbind_tab,
+          lt_etab    TYPE abap_func_excpbind_tab,
           ls_ptab    TYPE abap_func_parmbind,
+          ls_etab    TYPE abap_func_excpbind,
           lt_import  TYPE STANDARD TABLE OF rsimp,
           lt_export  TYPE STANDARD TABLE OF rsimp,
           lt_change  TYPE STANDARD TABLE OF rsimp,
@@ -367,26 +369,31 @@ CLASS zcl_dynamic_executor IMPLEMENTATION.
       ENDLOOP.
     ENDIF.
 
+    " Exception Table aufbauen - alle Exceptions abfangen
+    ls_etab-name = 'OTHERS'.
+    ls_etab-value = 1.
+    APPEND ls_etab TO lt_etab.
+
     " Dynamischer Aufruf
     CALL FUNCTION iv_fm_name
       PARAMETER-TABLE lt_ptab
-      EXCEPTIONS
-        OTHERS = 1.
+      EXCEPTION-TABLE lt_etab.
 
     IF sy-subrc <> 0.
-      RAISE EXCEPTION TYPE cx_sy_dyn_call_error.
+      RAISE EXCEPTION TYPE cx_sy_dyn_call_illegal_form.
     ENDIF.
 
   ENDMETHOD.
 
   METHOD get_fm_interface.
-    DATA: lt_enlfdir TYPE STANDARD TABLE OF enlfdir.
+    DATA: lt_enlfdir TYPE STANDARD TABLE OF enlfdir,
+          lt_except  TYPE STANDARD TABLE OF rsexc.
 
     CALL FUNCTION 'FUNCTION_IMPORT_INTERFACE'
       EXPORTING
         funcname           = iv_funcname
       TABLES
-        exception_list     = DATA(lt_except)
+        exception_list     = lt_except
         export_parameter   = et_export
         import_parameter   = et_import
         changing_parameter = et_change
@@ -399,7 +406,7 @@ CLASS zcl_dynamic_executor IMPLEMENTATION.
         OTHERS             = 4.
 
     IF sy-subrc <> 0.
-      RAISE EXCEPTION TYPE cx_sy_dyn_call_error.
+      RAISE EXCEPTION TYPE cx_sy_dyn_call_illegal_form.
     ENDIF.
 
   ENDMETHOD.
