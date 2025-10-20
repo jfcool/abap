@@ -55,6 +55,7 @@ CLASS zcl_dynamic_executor DEFINITION
 ENDCLASS.
 
 
+
 CLASS zcl_dynamic_executor IMPLEMENTATION.
 
   METHOD execute_from_json.
@@ -62,7 +63,7 @@ CLASS zcl_dynamic_executor IMPLEMENTATION.
           lr_data           TYPE REF TO data,
           lv_fm_name        TYPE rs38l_fnam.
 
-    " 1. FM Name aus JSON extrahieren
+    \" 1. FM Name aus JSON extrahieren
     CALL TRANSFORMATION id
       SOURCE XML iv_json
       RESULT fm_name = lv_fm_name.
@@ -71,10 +72,10 @@ CLASS zcl_dynamic_executor IMPLEMENTATION.
       RAISE EXCEPTION TYPE cx_sy_dyn_call_error.
     ENDIF.
 
-    " 2. Dynamische Struktur basierend auf FM Signatur aufbauen
+    \" 2. Dynamische Struktur basierend auf FM Signatur aufbauen
     ls_call_structure = build_dynamic_fm_structure( lv_fm_name ).
 
-    " 3. JSON in die dynamische Struktur deserialisieren
+    \" 3. JSON in die dynamische Struktur deserialisieren
     TRY.
         CALL TRANSFORMATION id
           SOURCE XML iv_json
@@ -82,7 +83,7 @@ CLASS zcl_dynamic_executor IMPLEMENTATION.
                  changing  = ls_call_structure-changing
                  tables    = ls_call_structure-tables.
       CATCH cx_transformation_error INTO DATA(lx_trans).
-        " Bei Fehler: Struktur komplett neu aufbauen
+        \" Bei Fehler: Struktur komplett neu aufbauen
         CREATE DATA lr_data TYPE ty_fm_call_structure.
         ASSIGN lr_data->* TO FIELD-SYMBOL(<fs_complete>).
         <fs_complete> = ls_call_structure.
@@ -94,7 +95,7 @@ CLASS zcl_dynamic_executor IMPLEMENTATION.
         ls_call_structure = <fs_complete>.
     ENDTRY.
 
-    " 4. Funktionsbaustein dynamisch aufrufen
+    \" 4. Funktionsbaustein dynamisch aufrufen
     execute_function_module(
       EXPORTING
         iv_fm_name   = lv_fm_name
@@ -104,7 +105,7 @@ CLASS zcl_dynamic_executor IMPLEMENTATION.
       IMPORTING
         er_exporting = ls_call_structure-exporting ).
 
-    " 5. Ergebnis-Struktur zurück nach JSON serialisieren
+    \" 5. Ergebnis-Struktur zurueck nach JSON serialisieren
     CALL TRANSFORMATION id
       SOURCE fm_name   = lv_fm_name
              importing = ls_call_structure-importing
@@ -127,11 +128,13 @@ CLASS zcl_dynamic_executor IMPLEMENTATION.
           lt_comp_tab  TYPE cl_abap_structdescr=>component_table,
           ls_component TYPE abap_componentdescr,
           lo_type      TYPE REF TO cl_abap_typedescr,
-          lo_struct    TYPE REF TO cl_abap_structdescr.
+          lo_datadescr TYPE REF TO cl_abap_datadescr,
+          lo_struct    TYPE REF TO cl_abap_structdescr,
+          lo_table     TYPE REF TO cl_abap_tabledescr.
 
     rs_structure-fm_name = iv_fm_name.
 
-    " FM Interface abrufen
+    \" FM Interface abrufen
     get_fm_interface(
       EXPORTING
         iv_funcname = iv_fm_name
@@ -141,27 +144,29 @@ CLASS zcl_dynamic_executor IMPLEMENTATION.
         et_change   = lt_change
         et_tables   = lt_tables ).
 
-    " === IMPORTING Parameter Struktur aufbauen ===
+    \" === IMPORTING Parameter Struktur aufbauen ===
     LOOP AT lt_import INTO DATA(ls_import).
       CLEAR ls_component.
       ls_component-name = to_upper( ls_import-parameter ).
 
-      IF ls_import-structure IS NOT INITIAL.
+      IF ls_import-reference IS NOT INITIAL.
         TRY.
-            lo_type = cl_abap_typedescr=>describe_by_name( ls_import-structure ).
-            ls_component-type ?= lo_type.
+            lo_type = cl_abap_typedescr=>describe_by_name( ls_import-reference ).
+            lo_datadescr ?= lo_type.
+            ls_component-type = lo_datadescr.
           CATCH cx_root.
-            ls_component-type = cl_abap_typedescr=>describe_by_name( 'STRING' ).
+            ls_component-type ?= cl_abap_typedescr=>describe_by_name( 'STRING' ).
         ENDTRY.
       ELSEIF ls_import-typ IS NOT INITIAL.
         TRY.
             lo_type = cl_abap_typedescr=>describe_by_name( ls_import-typ ).
-            ls_component-type ?= lo_type.
+            lo_datadescr ?= lo_type.
+            ls_component-type = lo_datadescr.
           CATCH cx_root.
-            ls_component-type = cl_abap_typedescr=>describe_by_name( 'STRING' ).
+            ls_component-type ?= cl_abap_typedescr=>describe_by_name( 'STRING' ).
         ENDTRY.
       ELSE.
-        ls_component-type = cl_abap_typedescr=>describe_by_name( 'STRING' ).
+        ls_component-type ?= cl_abap_typedescr=>describe_by_name( 'STRING' ).
       ENDIF.
 
       APPEND ls_component TO lt_comp_imp.
@@ -172,27 +177,29 @@ CLASS zcl_dynamic_executor IMPLEMENTATION.
       CREATE DATA rs_structure-importing TYPE HANDLE lo_struct.
     ENDIF.
 
-    " === EXPORTING Parameter Struktur aufbauen ===
+    \" === EXPORTING Parameter Struktur aufbauen ===
     LOOP AT lt_export INTO DATA(ls_export).
       CLEAR ls_component.
       ls_component-name = to_upper( ls_export-parameter ).
 
-      IF ls_export-structure IS NOT INITIAL.
+      IF ls_export-reference IS NOT INITIAL.
         TRY.
-            lo_type = cl_abap_typedescr=>describe_by_name( ls_export-structure ).
-            ls_component-type ?= lo_type.
+            lo_type = cl_abap_typedescr=>describe_by_name( ls_export-reference ).
+            lo_datadescr ?= lo_type.
+            ls_component-type = lo_datadescr.
           CATCH cx_root.
-            ls_component-type = cl_abap_typedescr=>describe_by_name( 'STRING' ).
+            ls_component-type ?= cl_abap_typedescr=>describe_by_name( 'STRING' ).
         ENDTRY.
       ELSEIF ls_export-typ IS NOT INITIAL.
         TRY.
             lo_type = cl_abap_typedescr=>describe_by_name( ls_export-typ ).
-            ls_component-type ?= lo_type.
+            lo_datadescr ?= lo_type.
+            ls_component-type = lo_datadescr.
           CATCH cx_root.
-            ls_component-type = cl_abap_typedescr=>describe_by_name( 'STRING' ).
+            ls_component-type ?= cl_abap_typedescr=>describe_by_name( 'STRING' ).
         ENDTRY.
       ELSE.
-        ls_component-type = cl_abap_typedescr=>describe_by_name( 'STRING' ).
+        ls_component-type ?= cl_abap_typedescr=>describe_by_name( 'STRING' ).
       ENDIF.
 
       APPEND ls_component TO lt_comp_exp.
@@ -203,27 +210,29 @@ CLASS zcl_dynamic_executor IMPLEMENTATION.
       CREATE DATA rs_structure-exporting TYPE HANDLE lo_struct.
     ENDIF.
 
-    " === CHANGING Parameter Struktur aufbauen ===
+    \" === CHANGING Parameter Struktur aufbauen ===
     LOOP AT lt_change INTO DATA(ls_change).
       CLEAR ls_component.
       ls_component-name = to_upper( ls_change-parameter ).
 
-      IF ls_change-structure IS NOT INITIAL.
+      IF ls_change-reference IS NOT INITIAL.
         TRY.
-            lo_type = cl_abap_typedescr=>describe_by_name( ls_change-structure ).
-            ls_component-type ?= lo_type.
+            lo_type = cl_abap_typedescr=>describe_by_name( ls_change-reference ).
+            lo_datadescr ?= lo_type.
+            ls_component-type = lo_datadescr.
           CATCH cx_root.
-            ls_component-type = cl_abap_typedescr=>describe_by_name( 'STRING' ).
+            ls_component-type ?= cl_abap_typedescr=>describe_by_name( 'STRING' ).
         ENDTRY.
       ELSEIF ls_change-typ IS NOT INITIAL.
         TRY.
             lo_type = cl_abap_typedescr=>describe_by_name( ls_change-typ ).
-            ls_component-type ?= lo_type.
+            lo_datadescr ?= lo_type.
+            ls_component-type = lo_datadescr.
           CATCH cx_root.
-            ls_component-type = cl_abap_typedescr=>describe_by_name( 'STRING' ).
+            ls_component-type ?= cl_abap_typedescr=>describe_by_name( 'STRING' ).
         ENDTRY.
       ELSE.
-        ls_component-type = cl_abap_typedescr=>describe_by_name( 'STRING' ).
+        ls_component-type ?= cl_abap_typedescr=>describe_by_name( 'STRING' ).
       ENDIF.
 
       APPEND ls_component TO lt_comp_chg.
@@ -234,26 +243,27 @@ CLASS zcl_dynamic_executor IMPLEMENTATION.
       CREATE DATA rs_structure-changing TYPE HANDLE lo_struct.
     ENDIF.
 
-    " === TABLES Parameter Struktur aufbauen ===
+    \" === TABLES Parameter Struktur aufbauen ===
     LOOP AT lt_tables INTO DATA(ls_table).
       CLEAR ls_component.
       ls_component-name = to_upper( ls_table-parameter ).
 
-      IF ls_table-structure IS NOT INITIAL.
+      IF ls_table-reference IS NOT INITIAL.
         TRY.
-            lo_type = cl_abap_typedescr=>describe_by_name( ls_table-structure ).
-            " Für Tables: Immer als Tabelle definieren
-            DATA(lo_table_type) = cl_abap_tabledescr=>create( p_line_type = lo_type ).
-            ls_component-type ?= lo_table_type.
+            lo_type = cl_abap_typedescr=>describe_by_name( ls_table-reference ).
+            lo_datadescr ?= lo_type.
+            \" Fuer Tables: Immer als Tabelle definieren
+            lo_table = cl_abap_tabledescr=>create( p_line_type = lo_datadescr ).
+            ls_component-type = lo_table.
           CATCH cx_root.
-            lo_type = cl_abap_typedescr=>describe_by_name( 'STRING' ).
-            lo_table_type = cl_abap_tabledescr=>create( p_line_type = lo_type ).
-            ls_component-type ?= lo_table_type.
+            lo_datadescr ?= cl_abap_typedescr=>describe_by_name( 'STRING' ).
+            lo_table = cl_abap_tabledescr=>create( p_line_type = lo_datadescr ).
+            ls_component-type = lo_table.
         ENDTRY.
       ELSE.
-        lo_type = cl_abap_typedescr=>describe_by_name( 'STRING' ).
-        lo_table_type = cl_abap_tabledescr=>create( p_line_type = lo_type ).
-        ls_component-type ?= lo_table_type.
+        lo_datadescr ?= cl_abap_typedescr=>describe_by_name( 'STRING' ).
+        lo_table = cl_abap_tabledescr=>create( p_line_type = lo_datadescr ).
+        ls_component-type = lo_table.
       ENDIF.
 
       APPEND ls_component TO lt_comp_tab.
@@ -276,7 +286,7 @@ CLASS zcl_dynamic_executor IMPLEMENTATION.
 
     FIELD-SYMBOLS: <fs_any> TYPE any.
 
-    " Interface abrufen
+    \" Interface abrufen
     get_fm_interface(
       EXPORTING
         iv_funcname = iv_fm_name
@@ -286,13 +296,13 @@ CLASS zcl_dynamic_executor IMPLEMENTATION.
         et_change   = lt_change
         et_tables   = lt_tables ).
 
-    " Exporting Struktur erstellen
+    \" Exporting Struktur erstellen
     IF er_exporting IS NOT BOUND.
       DATA(ls_temp) = build_dynamic_fm_structure( iv_fm_name ).
       er_exporting = ls_temp-exporting.
     ENDIF.
 
-    " === IMPORTING Parameter ===
+    \" === IMPORTING Parameter ===
     IF ir_importing IS BOUND.
       ASSIGN ir_importing->* TO FIELD-SYMBOL(<fs_importing>).
       LOOP AT lt_import INTO DATA(ls_import).
@@ -306,7 +316,7 @@ CLASS zcl_dynamic_executor IMPLEMENTATION.
       ENDLOOP.
     ENDIF.
 
-    " === EXPORTING Parameter ===
+    \" === EXPORTING Parameter ===
     IF er_exporting IS BOUND.
       ASSIGN er_exporting->* TO FIELD-SYMBOL(<fs_exporting>).
       LOOP AT lt_export INTO DATA(ls_export).
@@ -320,7 +330,7 @@ CLASS zcl_dynamic_executor IMPLEMENTATION.
       ENDLOOP.
     ENDIF.
 
-    " === CHANGING Parameter ===
+    \" === CHANGING Parameter ===
     IF ir_changing IS BOUND.
       ASSIGN ir_changing->* TO FIELD-SYMBOL(<fs_changing>).
       LOOP AT lt_change INTO DATA(ls_change).
@@ -334,7 +344,7 @@ CLASS zcl_dynamic_executor IMPLEMENTATION.
       ENDLOOP.
     ENDIF.
 
-    " === TABLES Parameter ===
+    \" === TABLES Parameter ===
     IF ir_tables IS BOUND.
       ASSIGN ir_tables->* TO FIELD-SYMBOL(<fs_tables>).
       LOOP AT lt_tables INTO DATA(ls_table).
@@ -348,7 +358,7 @@ CLASS zcl_dynamic_executor IMPLEMENTATION.
       ENDLOOP.
     ENDIF.
 
-    " Dynamischer Aufruf
+    \" Dynamischer Aufruf
     CALL FUNCTION iv_fm_name
       PARAMETER-TABLE lt_ptab
       EXCEPTIONS
