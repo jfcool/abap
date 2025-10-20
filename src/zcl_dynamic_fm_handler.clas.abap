@@ -14,6 +14,8 @@ CLASS zcl_dynamic_fm_handler IMPLEMENTATION.
   METHOD if_http_extension~handle_request.
     DATA: lv_json_request  TYPE string,
           lv_json_response TYPE string,
+          lv_error_text    TYPE string,
+          lv_error_json    TYPE string,
           lo_executor      TYPE REF TO zcl_dynamic_executor.
 
     TRY.
@@ -41,8 +43,9 @@ CLASS zcl_dynamic_fm_handler IMPLEMENTATION.
         server->response->set_cdata( lv_json_response ).
 
       CATCH cx_root INTO DATA(lx_error).
-        " Fehler als JSON zurueckgeben  
-        DATA(lv_error_json) = |{ \"error\": \"{ escape( val = lx_error->get_text( ) format = cl_abap_format=>e_json_string ) }\", \"success\": false }|.
+        " Fehler als JSON zurueckgeben
+        lv_error_text = escape( val = lx_error->get_text( ) format = cl_abap_format=>e_json_string ).
+        CONCATENATE '{ "error": "' lv_error_text '", "success": false }' INTO lv_error_json.
         server->response->set_status( code = 500 reason = 'Internal Server Error' ).
         server->response->set_header_field( name = 'Content-Type' value = 'application/json; charset=utf-8' ).
         server->response->set_cdata( lv_error_json ).
